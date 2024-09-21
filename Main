@@ -1,1 +1,124 @@
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import javax.net.ssl.*;
+
+public class monitor {
+
+    public static void main(String[] args) {
+        // Create a Scanner to take user input
+        Scanner scanner = new Scanner(System.in);
+
+        // Prompt the user for the filename
+        System.out.println("Enter the  path and name of the url file: ");
+        String filename = scanner.nextLine();
+
+        // Read URLs from the file
+        List<String> urls = readUrlsFromFile(filename);
+        if (urls.isEmpty()) {
+            System.out.println("No URLs found or error reading the file.");
+            return;
+        }
+
+        // Process each URL
+        for (String url : urls) {
+            try {
+                if (url.startsWith("https://")) {
+                    handleHttpsRequest(url);
+                } else if (url.startsWith("http://")) {
+                    handleHttpRequest(url);
+                } else {
+                    System.out.println("URL: " + url + "\nStatus: Invalid Protocol");
+                }
+            } catch (Exception e) {
+                System.out.println("URL: " + url + "\nStatus: Network Error");
+            }
+        }
+
+        scanner.close();
+    }
+
+    // Method to read URLs from the file
+    private static List<String> readUrlsFromFile(String filename) {
+        List<String> urls = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                urls.add(line.trim()); // Add each URL to the list
+            }
+        } catch (IOException e) {
+            System.out.println("Error reading file: " + filename);
+        }
+        return urls;
+    }
+
+    // Handling HTTP requests
+    private static void handleHttpRequest(String url) throws IOException {
+        URL parsedUrl = new URL(url);
+        String host = parsedUrl.getHost();
+        int port = 80;
+        String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
+
+        // Open socket connection to server
+        Socket socket = new Socket(host, port);
+        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+        // Send HTTP GET request
+        out.println("GET " + path + " HTTP/1.1");
+        out.println("Host: " + host);
+        out.println("Connection: close");
+        out.println();
+
+        // Read and process HTTP response
+        String responseLine;
+        while ((responseLine = in.readLine()) != null) {
+            if (responseLine.startsWith("HTTP/")) {
+                System.out.println("URL: " + url);
+                System.out.println("Status: " + responseLine);
+                break;
+            }
+        }
+
+        // Close connection
+        in.close();
+        out.close();
+        socket.close();
+    }
+
+    // Handling HTTPS requests
+    private static void handleHttpsRequest(String url) throws IOException {
+        URL parsedUrl = new URL(url);
+        String host = parsedUrl.getHost();
+        int port = 443;
+        String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
+
+        // Open SSL socket connection to server
+        SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+        SSLSocket socket = (SSLSocket) factory.createSocket(host, port);
+        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+        // Send HTTPS GET request
+        out.println("GET " + path + " HTTP/1.1");
+        out.println("Host: " + host);
+        out.println("Connection: close");
+        out.println();
+
+        // Read and process HTTPS response
+        String responseLine;
+        while ((responseLine = in.readLine()) != null) {
+            if (responseLine.startsWith("HTTP/")) {
+                System.out.println("URL: " + url);
+                System.out.println("Status: " + responseLine);
+                break;
+            }
+        }
+
+        // Close connection
+        in.close();
+        out.close();
+        socket.close();
+    }
+}
 

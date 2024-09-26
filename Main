@@ -4,49 +4,47 @@ import java.util.*;
 import javax.net.ssl.*;
 
 public class monitor {
-
     public static void main(String[] args) {
-        // Create a Scanner to take user input
-        Scanner scanner = new Scanner(System.in);
-
-        // Prompt the user for the filename
-        System.out.println("Enter the  path and name of the url file: ");
-        String filename = scanner.nextLine();
 
         // Read URLs from the file
-        List<String> urls = readUrlsFromFile(filename);
+        List<String> urls = readUrlsFromSrc("URLfile.txt");
+        
         if (urls.isEmpty()) {
             System.out.println("No URLs found or error reading the file.");
             return;
         }
-
+        
         // Process each URL
         for (String url : urls) {
             try {
                 if (url.startsWith("https://")) {
                     handleHttpsRequest(url);
-                } else if (url.startsWith("http://")) {
+                } 
+                else if (url.startsWith("http://")) {
                     handleHttpRequest(url);
-                } else {
+                } 
+                else {
                     System.out.println("URL: " + url + "\nStatus: Invalid Protocol");
                 }
-            } catch (Exception e) {
+            } 
+            catch (Exception e) {
                 System.out.println("URL: " + url + "\nStatus: Network Error");
             }
         }
-
-        scanner.close();
     }
 
-    // Method to read URLs from the file
-    private static List<String> readUrlsFromFile(String filename) {
+
+    private static List<String> readUrlsFromSrc(String filename) {
         List<String> urls = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(filename))) {
+
+        
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(monitor.class.getClassLoader().getResourceAsStream(filename)))) {
             String line;
             while ((line = br.readLine()) != null) {
-                urls.add(line.trim()); // Add each URL to the list
+                urls.add(line.trim());
             }
-        } catch (IOException e) {
+        } 
+        catch (IOException | NullPointerException e) {
             System.out.println("Error reading file: " + filename);
         }
         return urls;
@@ -58,28 +56,28 @@ public class monitor {
         String host = parsedUrl.getHost();
         int port = 80;
         String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
-
+        
         // Open socket connection to server
         Socket socket = new Socket(host, port);
         PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
+        
         // Send HTTP GET request
         out.println("GET " + path + " HTTP/1.1");
         out.println("Host: " + host);
         out.println("Connection: close");
         out.println();
-
+        
         // Read and process HTTP response
         String responseLine;
         while ((responseLine = in.readLine()) != null) {
             if (responseLine.startsWith("HTTP/")) {
-                System.out.println("URL: " + url);
-                System.out.println("Status: " + responseLine);
-                break;
+                int statusCode = Integer.parseInt(responseLine.split(" ")[1]);  // Extract the status code
+                printStatus(url, statusCode, responseLine);
+                break;  // Stop reading once the status line is found
             }
         }
-
+        
         // Close connection
         in.close();
         out.close();
@@ -92,33 +90,51 @@ public class monitor {
         String host = parsedUrl.getHost();
         int port = 443;
         String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
-
+        
         // Open SSL socket connection to server
         SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
         SSLSocket socket = (SSLSocket) factory.createSocket(host, port);
         PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
+        
         // Send HTTPS GET request
         out.println("GET " + path + " HTTP/1.1");
         out.println("Host: " + host);
         out.println("Connection: close");
         out.println();
-
+        
         // Read and process HTTPS response
         String responseLine;
         while ((responseLine = in.readLine()) != null) {
             if (responseLine.startsWith("HTTP/")) {
-                System.out.println("URL: " + url);
-                System.out.println("Status: " + responseLine);
-                break;
+                int statusCode = Integer.parseInt(responseLine.split(" ")[1]);  // Extract the status code
+                printStatus(url, statusCode, responseLine);
+                break;  // Stop reading once the status line is found
             }
         }
-
+        
         // Close connection
         in.close();
         out.close();
         socket.close();
+    }
+
+    // Method to print the status based on the status code
+    private static void printStatus(String url, int statusCode, String statusLine) {
+        // Check if the status code is in the 2XX, 3XX, or 4XX range
+        if (statusCode >= 200 && statusCode < 300) {
+            System.out.println("URL: " + url);
+            System.out.println("Status: " + statusLine);  // 2XX - Success
+        } else if (statusCode >= 300 && statusCode < 400) {
+            System.out.println("URL: " + url);
+            System.out.println("Status: " + statusLine);  // 3XX - Redirection
+        } else if (statusCode >= 400 && statusCode < 500) {
+            System.out.println("URL: " + url);
+            System.out.println("Status: " + statusLine);  // 4XX - Client Error
+        } else {
+            System.out.println("URL: " + url);
+            System.out.println("Status: Not within 2XX, 3XX, or 4XX range.");
+        }
     }
 }
 

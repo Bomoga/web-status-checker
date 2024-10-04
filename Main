@@ -183,7 +183,9 @@ public class monitor {
     private static void fetchImagesFromHtml(String htmlContent, URL baseUrl) {
     	
         // Simple regex to extract img src URLs from HTML
-    	String regex = "&lt;img\\s+src=([^\\s>]+)\\s+alt=[^>]+>";
+    	//String regex = "&lt;img\\s+src=([^\\s>]+)\\s+alt=[^>]+>"; chatgpt suggested the change bellow
+    	String regex = "<img\\s+src=\"([^\"]+)\"";
+
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(htmlContent);
 

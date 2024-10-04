@@ -168,10 +168,11 @@ public class monitor {
             else if (redirectedUrl.startsWith("http://")) {
                 handleHttpRequest(redirectedUrl);
             }
-        } 
+        }
         else {
             fetchImagesFromHtml(htmlResponse.toString(), parsedUrl);
         }
+
 
         in.close();
         out.close();
@@ -182,16 +183,22 @@ public class monitor {
     private static void fetchImagesFromHtml(String htmlContent, URL baseUrl) {
     	
         // Simple regex to extract img src URLs from HTML
-    	String regex = "<img\\s+[^>]*src=[\"']([^\"']+)[\"'][^>]*>";
+    	String regex = "&lt;img\\s+src=([^\\s>]+)\\s+alt=[^>]+>";
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(htmlContent);
 
         while (matcher.find()) {
+        	System.out.println("Found match: " + matcher.group());
             String imgUrl = matcher.group(1);
 
             // Convert relative URLs to absolute URLs
             if (!imgUrl.startsWith("http")) {
-                imgUrl = baseUrl.getProtocol() + "://" + baseUrl.getHost() + imgUrl;
+                if (imgUrl.startsWith("/")) {
+                    imgUrl = baseUrl.getProtocol() + "://" + baseUrl.getHost() + imgUrl;
+                } 
+                else {
+                    imgUrl = baseUrl.getProtocol() + "://" + baseUrl.getHost() + "/" + imgUrl;
+                }
             }
 
             // Print the referenced URL

@@ -3,306 +3,104 @@ package Mod;
 import java.io.*;
 import java.net.*;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import javax.net.ssl.*;
 
 public class monitor {
-    public static void main(String[] args) {
 
-        // Read URLs from the file
-        List<String> urls = readUrlsFromSrc("URLfile.txt");
-        
+	public static void main(String[] args) {
+        // Specify the file path directly (hard-coded)
+        String filename = "URLfile.txt"; // You can adjust this to the exact path where your file is stored
+
+        List<String> urls = readUrlsFromResource(filename);
         if (urls.isEmpty()) {
             System.out.println("No URLs found or error reading the file.");
             return;
         }
-        
-        // Process each URL
+
         for (String url : urls) {
             try {
-                if (url.startsWith("https://")) {
-                    handleHttpsRequest(url);
-                } 
-                else if (url.startsWith("http://")) {
-                    handleHttpRequest(url);
-                } 
-                else {
-                    System.out.println("URL: " + url + "\nStatus: Invalid Protocol");
-                }
-            } 
-            catch (Exception e) {
+                handleRequest(url);
+            } catch (Exception e) {
                 System.out.println("URL: " + url + "\nStatus: Network Error");
             }
         }
     }
 
-
-    private static List<String> readUrlsFromSrc(String filename) {
+	private static List<String> readUrlsFromResource(String filename) {
         List<String> urls = new ArrayList<>();
+        ClassLoader classLoader = monitor.class.getClassLoader();
 
-        
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(monitor.class.getClassLoader().getResourceAsStream(filename)))) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(classLoader.getResourceAsStream(filename)))) {
             String line;
             while ((line = br.readLine()) != null) {
-                urls.add(line.trim());
+                urls.add(line.trim());  // Add each URL to the list
             }
-        } 
-        catch (IOException | NullPointerException e) {
-            System.out.println("Error reading file: " + filename);
+        } catch (IOException | NullPointerException e) {
+            System.out.println("Error reading file from resource: " + filename);
         }
         return urls;
     }
 
-    // Handling HTTP requests
-    private static void handleHttpRequest(String url) throws IOException {
+    private static void handleRequest(String url) throws IOException {
+        // Determine the protocol and establish a connection
         URL parsedUrl = new URL(url);
-        String host = parsedUrl.getHost();
-        int port = 80;
-        String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
-        
-        // Open socket connection to server
-        Socket socket = new Socket(host, port);
-        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        
-        // Send HTTP GET request
-        out.println("GET " + path + " HTTP/1.1");
-        out.println("Host: " + host);
-        out.println("Connection: close");
-        out.println();
-        
-        StringBuilder htmlResponse = new StringBuilder();
-        String responseLine;
-        Map<String, String> headers = new HashMap<>();
-        boolean isRedirect = false;
+        HttpURLConnection connection = (HttpURLConnection) parsedUrl.openConnection();
+        connection.setRequestMethod("GET");
+        connection.setInstanceFollowRedirects(false); // Disable automatic redirects
 
-        while ((responseLine = in.readLine()) != null) {
-            htmlResponse.append(responseLine).append("\n");
+        // Try to connect and get the response
+        try {
+            connection.connect();
+            int statusCode = connection.getResponseCode();
+            System.out.println("URL: " + url);
+            System.out.println("Status: " + statusCode + " " + connection.getResponseMessage());
 
-            if (responseLine.startsWith("HTTP/")) {
-                int statusCode = Integer.parseInt(responseLine.split(" ")[1]);
-                printStatus(url, statusCode, responseLine);
-                if (statusCode >= 300 && statusCode < 400) {
-                    isRedirect = true;
-                }
-            } 
-            else if (responseLine.isEmpty()) {
-                break; // End of headers
-            } 
-            else if (responseLine.contains(": ")) {
-                String[] header = responseLine.split(": ", 2);
-                headers.put(header[0], header[1]);
+            // Handle redirects
+            if (statusCode == HttpURLConnection.HTTP_MOVED_PERM || statusCode == HttpURLConnection.HTTP_MOVED_TEMP) {
+                String redirectUrl = connection.getHeaderField("Location");
+                System.out.println("Redirected URL: " + redirectUrl);
+                handleRequest(redirectUrl); // Follow the redirect
             }
-        }
-        if (isRedirect && headers.containsKey("Location")) {
-            String redirectedUrl = headers.get("Location");
-            System.out.println("Redirected to: " + redirectedUrl);
-            if (redirectedUrl.startsWith("https://")) {
-                handleHttpsRequest(redirectedUrl);
-            } 
-            else if (redirectedUrl.startsWith("http://")) {
-                handleHttpRequest(redirectedUrl);
-            }
-        }
-        else {
-            fetchImagesFromHtml(htmlResponse.toString(), parsedUrl);
-        }
 
-        in.close();
-        out.close();
-        socket.close();
+            // Handle referencing URLs (fetch the body to find references)
+            if (statusCode == HttpURLConnection.HTTP_OK) {
+                handleReferencedUrls(connection);
+            }
+
+        } 
+        catch (IOException e) {
+            System.out.println("Status: Network Error");
+        } 
+        finally {
+            connection.disconnect();
+        }
     }
 
-    // Handling HTTPS requests
-    private static void handleHttpsRequest(String url) throws IOException {
-        URL parsedUrl = new URL(url);
-        String host = parsedUrl.getHost();
-        int port = 443;
-        String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
-        
-        // Open SSL socket connection to server
-        SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
-        SSLSocket socket = (SSLSocket) factory.createSocket(host, port);
-        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        
-        // Send HTTPS GET request
-        out.println("GET " + path + " HTTP/1.1");
-        out.println("Host: " + host);
-        out.println("Connection: close");
-        out.println();
-        
-        // Read and process HTTPS response
-        StringBuilder htmlResponse = new StringBuilder();
-        String responseLine;
-        Map<String, String> headers = new HashMap<>();
-        boolean isRedirect = false;
-
-        while ((responseLine = in.readLine()) != null) {
-            htmlResponse.append(responseLine).append("\n");
-
-            if (responseLine.startsWith("HTTP/")) {
-                int statusCode = Integer.parseInt(responseLine.split(" ")[1]);
-                printStatus(url, statusCode, responseLine);
-                if (statusCode >= 300 && statusCode < 400) {
-                    isRedirect = true;
+    private static void handleReferencedUrls(HttpURLConnection connection) throws IOException {
+        // Reading the response body to find referenced URLs
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+            String inputLine;
+            while ((inputLine = in.readLine()) != null) {
+                
+                if (inputLine.contains("src=\"")) {
+                    int start = inputLine.indexOf("src=\"") + 5;
+                    int end = inputLine.indexOf("\"", start);
+                    if (end > start) {
+                        String referencedUrl = inputLine.substring(start, end);
+                        System.out.println("Referenced URL: " + referencedUrl);
+                        handleRequest(referencedUrl); // Check the status of the referenced URL
+                    }
                 }
-            } 
-            else if (responseLine.isEmpty()) {
-                break; // End of headers
-            } 
-            else if (responseLine.contains(": ")) {
-                String[] header = responseLine.split(": ", 2);
-                headers.put(header[0], header[1]);
-            }
-        }
-
-        if (isRedirect && headers.containsKey("Location")) {
-            String redirectedUrl = headers.get("Location");
-            System.out.println("Redirected to: " + redirectedUrl);
-            if (redirectedUrl.startsWith("https://")) {
-                handleHttpsRequest(redirectedUrl);
-            } 
-            else if (redirectedUrl.startsWith("http://")) {
-                handleHttpRequest(redirectedUrl);
-            }
-        }
-        else {
-            fetchImagesFromHtml(htmlResponse.toString(), parsedUrl);
-        }
-
-
-        in.close();
-        out.close();
-        socket.close();
-    }
-    
-    // This method fetches images from the HTML content
-    private static void fetchImagesFromHtml(String htmlContent, URL baseUrl) {
-    	
-        // Simple regex to extract img src URLs from HTML
-    	//String regex = "&lt;img\\s+src=([^\\s>]+)\\s+alt=[^>]+>"; chatgpt suggested the change bellow
-    	String regex = "<img\\s+src=\"([^\"]+)\"";
-
-        Pattern pattern = Pattern.compile(regex);
-        Matcher matcher = pattern.matcher(htmlContent);
-
-        while (matcher.find()) {
-        	System.out.println("Found match: " + matcher.group());
-            String imgUrl = matcher.group(1);
-
-            // Convert relative URLs to absolute URLs
-            if (!imgUrl.startsWith("http")) {
-                if (imgUrl.startsWith("/")) {
-                    imgUrl = baseUrl.getProtocol() + "://" + baseUrl.getHost() + imgUrl;
-                } 
-                else {
-                    imgUrl = baseUrl.getProtocol() + "://" + baseUrl.getHost() + "/" + imgUrl;
+                
+                if (inputLine.contains("href=\"")) {
+                    int start = inputLine.indexOf("href=\"") + 6;
+                    int end = inputLine.indexOf("\"", start);
+                    if (end > start) {
+                        String hrefUrl = inputLine.substring(start, end);
+                        System.out.println("Referenced URL: " + hrefUrl);
+                        handleRequest(hrefUrl); // Check the status of the referenced URL
+                    }
                 }
             }
-
-            // Print the referenced URL
-            System.out.println("Referenced URL: " + imgUrl);
-
-            // Fetch image and print status
-            try {
-                if (imgUrl.startsWith("https://")) {
-                    handleHttpsRequestForImage(imgUrl);
-                } else if (imgUrl.startsWith("http://")) {
-                    handleHttpRequestForImage(imgUrl);
-                }
-            } catch (Exception e) {
-                System.out.println("Referenced URL: " + imgUrl + "\nStatus: Error Fetching Image");
-            }
-        }
-    }
-
-    // Handle HTTP image requests (simplified to fetch only image status)
-    private static void handleHttpRequestForImage(String url) throws IOException {
-        URL parsedUrl = new URL(url);
-        String host = parsedUrl.getHost();
-        int port = 80;
-        String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
-
-        // Open socket connection to server
-        Socket socket = new Socket(host, port);
-        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        // Send HTTP GET request for the image
-        out.println("GET " + path + " HTTP/1.1");
-        out.println("Host: " + host);
-        out.println("Connection: close");
-        out.println();
-
-        // Read and process HTTP response
-        String responseLine;
-        while ((responseLine = in.readLine()) != null) {
-            if (responseLine.startsWith("HTTP/")) {
-                int statusCode = Integer.parseInt(responseLine.split(" ")[1]);
-                printStatus(url, statusCode, responseLine);
-                break; // Stop reading after headers for images
-            }
-        }
-
-        // Close connection
-        in.close();
-        out.close();
-        socket.close();
-    }
-
-    // Handle HTTPS image requests (simplified to fetch only image status)
-    private static void handleHttpsRequestForImage(String url) throws IOException {
-        URL parsedUrl = new URL(url);
-        String host = parsedUrl.getHost();
-        int port = 443;
-        String path = parsedUrl.getPath().isEmpty() ? "/" : parsedUrl.getPath();
-
-        // Open SSL socket connection to server
-        SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
-        SSLSocket socket = (SSLSocket) factory.createSocket(host, port);
-        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-        // Send HTTPS GET request for the image
-        out.println("GET " + path + " HTTP/1.1");
-        out.println("Host: " + host);
-        out.println("Connection: close");
-        out.println();
-
-        // Read and process HTTPS response
-        String responseLine;
-        while ((responseLine = in.readLine()) != null) {
-            if (responseLine.startsWith("HTTP/")) {
-                int statusCode = Integer.parseInt(responseLine.split(" ")[1]);
-                printStatus(url, statusCode, responseLine);
-                break; // Stop reading after headers for images
-            }
-        }
-
-        // Close connection
-        in.close();
-        out.close();
-        socket.close();
-    }
-
-    // Method to print the status based on the status code
-    private static void printStatus(String url, int statusCode, String statusLine) {
-        // Check if the status code is in the 2XX, 3XX, or 4XX range
-        if (statusCode >= 200 && statusCode < 300) {
-            System.out.println("URL: " + url);
-            System.out.println("Status: " + statusLine);  // 2XX - Success  
-        } else if (statusCode >= 300 && statusCode < 400) {
-            System.out.println("URL: " + url);
-            System.out.println("Status: " + statusLine);  // 3XX - Redirection
-        } else if (statusCode >= 400 && statusCode < 500) {
-            System.out.println("URL: " + url);
-            System.out.println("Status: " + statusLine);  // 4XX - Client Error
-        } else {
-            System.out.println("URL: " + url);
-            System.out.println("Status: Not within 2XX, 3XX, or 4XX range.");
         }
     }
 }
